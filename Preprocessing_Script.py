@@ -7,9 +7,9 @@ import os
 import soundfile as sf  
 import zipfile  
 from tqdm.auto import tqdm 
-import transcription_processing
 import Vocab
-import transcription_embeddings
+from transcription_processing import sentence_preprocessing
+import transcription_embeddings 
 
 output_audio_dir = "processed_audio"
 os.makedirs(output_audio_dir, exist_ok=True)
@@ -31,31 +31,38 @@ df.drop(df[df['audio_file'] == 'لشخصك ولأفكارك الـProgressive،"
 df.drop(df[df['text'] == '[موسيقى]'].index, inplace=True)
 df = df[~df['audio_file'].isin(transcription_without_audio)]
 print(f"Dataset shape after cleaning: {df.shape}")
+output_audio_dir = "processed_audio"
+os.makedirs(output_audio_dir, exist_ok=True)
 
 df.set_index('audio_file', inplace=True)
 df['mfccs'] = None
 df['cleaned_text'] = None
 df['normalized_text'] = None
-error_files = []
+error_files = [] 
+print(df.shape)
 for audio in tqdm(df.index, desc="Processing Audio Files"):
-    audio_path = '/kaggle/input/egyptian-arabic-lines/data/' + audio
+    audio_path = 'Dataset/data/' + audio
     try:
         signal, rate = librosa.load(audio_path, sr=16000)
-        df.at[audio, 'length'] = len(signal) / rate
-        cleaned_audio = nr.reduce_noise(signal, rate)
-        resampled_audio = librosa.resample(cleaned_audio, orig_sr=rate, target_sr=16000)
-        normalized_audio = librosa.util.normalize(resampled_audio)
+        length = len(signal) / rate
+        df.at[audio, 'length'] = length
         
-        # Save the processed audio file
-        output_audio_path = os.path.join(output_audio_dir, f"processed_{audio}")
-        sf.write(output_audio_path, normalized_audio, 16000)
-        
-        mfccs = librosa.feature.mfcc(y=normalized_audio, sr=16000, n_mfcc=13)
-        df.at[audio, 'mfccs'] = mfccs.tolist()
+        if (length >=3  and length <= 10):
+            cleaned_audio = nr.reduce_noise(signal, rate)
+            resampled_audio = librosa.resample(cleaned_audio, orig_sr=rate, target_sr=16000)
+            normalized_audio = librosa.util.normalize(resampled_audio)
+            
+            # Save processed audio file
+            output_path = os.path.join(output_audio_dir, f"processed_{audio}")
+            sf.write(output_path, normalized_audio, 16000)
+            mfccs = librosa.feature.mfcc(y=normalized_audio, sr=16000, n_mfcc=13)
+            df.at[audio, 'mfccs'] = mfccs.tolist()
 
-        raw_text = df.at[audio, 'text']
-        cleaned_text = transcription_processing.transcription_preprocessing(raw_text)
-        df.at[audio, 'cleaned_text'] = cleaned_text
+            raw_text = df.at[audio, 'text']
+            cleaned_text = sentence_preprocessing(raw_text)
+            df.at[audio, 'cleaned_text'] = cleaned_text
+        else:
+            df.drop(audio, axis=0, inplace=True)
     except Exception as e:
         error_message = str(e)
         tqdm.write(f"Error processing {audio}: {error_message}")
@@ -72,10 +79,6 @@ if error_files:
 else:
     print("\nAll files processed successfully!")
 
-print("\nAudio length statistics:")
-print(df['length'].describe())
-print("\nFiltering by audio length (2-10 seconds)...")
-df = df[(df['length'] < 10) & (df['length'] > 2)]
 print(f"Dataset shape after length filtering: {df.shape}")
 
 print("\nTokenizing text...")
@@ -90,7 +93,6 @@ print("\nSaving preprocessed data to CSV...")
 df.to_csv("Preprocessed_with_embeddings.csv")
 print("Preprocessing complete! Output saved to 'Preprocessed_with_embeddings.csv'")
 
-# Zip the processed audio files
 zip_filename = "processed_audio_files.zip"
 print(f"\nCreating zip archive: {zip_filename}")
 with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
