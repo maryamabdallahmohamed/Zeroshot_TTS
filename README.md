@@ -30,17 +30,7 @@ All required libraries are listed in `requirements.txt`. The main dependencies i
 To install all required dependencies, run:
 
 ```bash
-# Make the installation script executable
-chmod +x install_requirements.sh
-
-# Run the installation script
-./install_requirements.sh
-```
-
-Or install directly using pip:
-
-```bash
-python -m pip install -r requirements.txt
+python3 -m pip3 install -r requirements.txt
 ```
 
 ## Project Structure
@@ -49,7 +39,8 @@ python -m pip install -r requirements.txt
 - `visualization_notebook.ipynb`: Notebook for visualizing audio features and transformations
 - `transcription.py`: Module containing text preprocessing functions
 - `requirements.txt`: List of required Python packages
-- `install_requirements.sh`: Script to install all dependencies
+
+
 
 ## Usage
 
