@@ -5,7 +5,8 @@ from tqdm import tqdm
 class embedding_model:
     def __init__(self, df):
         self.df = df
-        self.model = SentenceTransformer('distiluse-base-multilingual-cased-v2', device='mps',cache_folder='embedding_model_cache')  
+        self.model =SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device='mps',cache_folder='embedding_model_cache')  
+ 
         self.df['text_embedding'] = None
     def generate_embeddings(self):
         for idx in tqdm(self.df.index, desc="Generating embeddings"):

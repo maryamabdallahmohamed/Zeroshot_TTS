@@ -1,13 +1,16 @@
 librosa
 noisereduce
+soundfile
 pandas
 numpy
 matplotlib
 pyarabic
 num2words
-# tensorflow
-torch
 sentence-transformers
+torch
+tensorflow-macos # For macOS users
+# tensorflow>=2.8.0  # Uncomment for non-macOS users
 tqdm
 jiwer
-tensorflow-macos
+hf_xet
+ipython
