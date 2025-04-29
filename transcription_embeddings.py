@@ -10,9 +10,8 @@ class embedding_model:
         self.df['text_embedding'] = None
     def generate_embeddings(self):
         for idx in tqdm(self.df.index, desc="Generating embeddings"):
-            text = self.df.at[idx, 'cleaned_text']
+            text = self.df.at[idx, 'clean_text']
             embedding = self.model.encode(text)
             self.df.at[idx, 'text_embedding'] = embedding.tolist()
         print(f"Embedding shape: {np.array(self.df['text_embedding'].iloc[0]).shape}")
         return self.df
-
