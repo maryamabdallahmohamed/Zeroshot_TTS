@@ -7,3 +7,13 @@ processed_audio
 Problem Definition & Data Preprocessing.docx
 .augmentignore 
 .venv
+*.pth
+*.zip
+scripts
+phase2_data
+model_cache
+processor_cache
+*.md
+features_output
+*log
+.DS_Store
