@@ -26,8 +26,8 @@ torch.manual_seed(RANDOM_SEED)
 
 # ------------------- Dataset -------------------
 class ArabicProcessedAudios(Dataset):
-    def __init__(self, audio_path, max_length=160000, max_files=5):
-        self.audio_files = glob.glob(os.path.join(audio_path, "*.mp3"))[:max_files]
+    def __init__(self, audio_path, max_length=160000):
+        self.audio_files = glob.glob(os.path.join(audio_path, "*.mp3"))
         self.max_length = max_length
 
     def __getitem__(self, idx):
