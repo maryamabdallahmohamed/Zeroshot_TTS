@@ -16,12 +16,11 @@ class Transpose(nn.Module):
 class SemanticExtractor(nn.Module):
     def __init__(self, input_dim=512, hidden_dim=384, codebook_size=8192, codebook_dim=8):
         super().__init__()
-        # Only keep the encoder and quantizer parts
         self.encoder = nn.Sequential(
             nn.Conv1d(input_dim, hidden_dim, kernel_size=7, padding=3),
-            Transpose(),                             # (B, 384, L) → (B, L, 384)
-            nn.LayerNorm(hidden_dim),               # now normalizes the last dim
-            Transpose(),                             # (B, L, 384) → (B, 384, L)
+            Transpose(),
+            nn.LayerNorm(hidden_dim),
+            Transpose(),
             *[ConvNextBlock(hidden_dim) for _ in range(6)],
             nn.Conv1d(hidden_dim, codebook_dim, kernel_size=1)
         )
@@ -29,24 +28,23 @@ class SemanticExtractor(nn.Module):
         self.quantizer = VectorQuantizer(num_embeddings=codebook_size, embedding_dim=codebook_dim)
 
     def forward(self, x):
-        # x shape: (batch_size, sequence_length, input_dim)
-        x = x.transpose(1, 2)  # To (batch_size, input_dim, sequence_length)
-        z = self.encoder(x)  # Get encoded features
-        z = z.transpose(1, 2)  # To (batch_size, sequence_length, codebook_dim)
-        _, _, indices = self.quantizer(z)  # Get semantic tokens
+        x = x.transpose(1, 2)
+        z = self.encoder(x) 
+        z = z.transpose(1, 2)  
+        _, _, indices = self.quantizer(z) 
         return indices
 
 class ConvNextBlock(nn.Module):
     def __init__(self, dim, kernel_size=7):
         super().__init__()
-        self.conv = nn.Conv1d(dim, dim, kernel_size, padding=kernel_size//2, groups=dim)  # Depthwise
+        self.conv = nn.Conv1d(dim, dim, kernel_size, padding=kernel_size//2, groups=dim) 
         self.norm = nn.LayerNorm(dim)
         self.pwconv1 = nn.Linear(dim, 4 * dim)
         self.pwconv2 = nn.Linear(4 * dim, dim)
         self.act = nn.GELU()
 
     def forward(self, x):
-        # x: (batch, dim, seq_len)
+   
         residual = x
         x = self.conv(x)
         # Transpose for LayerNorm
@@ -94,15 +92,14 @@ class VectorQuantizer(nn.Module):
         
         return quantized, loss, encoding_indices
 
-def load_semantic_extractor(model_path='semantic_codec_final_2.pth', device='mps'):
+def load_semantic_extractor(model_path='/kaggle/working/semantic_codec_final_20k_2.pth', device='cuda'):
+    print(device)
     model = SemanticExtractor(input_dim=512, hidden_dim=384, codebook_size=8192, codebook_dim=8)
     state_dict = torch.load(model_path, map_location=device)
-
-    # Load encoder weights
+ 
     encoder_state = {k.replace("encoder.", ""): v for k, v in state_dict.items() if k.startswith("encoder.")}
     model.encoder.load_state_dict(encoder_state, strict=False)  # <=== set strict=False
 
-    # Load quantizer weights
     quantizer_state = {k.replace("quantizer.", ""): v for k, v in state_dict.items() if k.startswith("quantizer.")}
     model.quantizer.load_state_dict(quantizer_state, strict=False)  
 
@@ -123,6 +120,5 @@ def extract_semantics(audio_features, model):
     with torch.no_grad():
         semantic_tokens = model(audio_features)
     return semantic_tokens
-
 
 
