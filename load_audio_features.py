@@ -1,103 +1,116 @@
+import os, glob, gc, logging
+from tqdm import tqdm
+import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
-import numpy as np
+from torch.utils.data import Dataset, DataLoader
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
-import os
-import glob
 import librosa
-import gc
-import logging
-from tqdm import tqdm
 
-# ------------------- Configuration -------------------
-AUDIO_DIR = 'phase2_data/subset_80k_audio'
-MODEL_NAME = "openai/whisper-base"
-CACHE_DIR = './cache'
-BATCH_SIZE = 1  # Ensure output shape has batch_size = 1
-MAX_LENGTH_AUDIO = 160000
-MAX_LENGTH_FEATURES = 1500
-RANDOM_SEED = 42
-DEVICE = torch.device("mps")  # Use "cuda" if GPU is available
+AUDIO_DIR = "/kaggle/input/tts-dataset/FINAL_TTS_DATA"
+MODEL_NAME= "openai/whisper-base"
+CACHE_DIR = "./hf_cache"
+BATCH_SIZE = 2
+MAX_WAV_LEN = 160_000          
+MEL_PAD_LEN = 3000           
+FEATURE_SEQ_LEN = 1500         
+DEVICE = (torch.device("mps")  if torch.backends.mps.is_available()  else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+)
 
-# ------------------- Setup -------------------
-logging.basicConfig(level=logging.INFO, filename='training.log', filemode='w')
-torch.manual_seed(RANDOM_SEED)
+logging.basicConfig(level=logging.INFO, filename="training.log", filemode="w")
+torch.manual_seed(42)
 
-# ------------------- Dataset -------------------
+
 class ArabicProcessedAudios(Dataset):
-    def __init__(self, audio_path, max_length=160000):
-        self.audio_files = glob.glob(os.path.join(audio_path, "*.mp3"))
-        self.max_length = max_length
+    def __init__(self, audio_path: str, max_length: int = MAX_WAV_LEN):
+        self.audio_path = audio_path 
+        all_files = glob.glob(os.path.join(self.audio_path, "*.mp3"))[:20000] 
+        self.files = []
+        self.maxlen = max_length
 
-    def __getitem__(self, idx):
-        file = self.audio_files[idx]
-        try:
-            audio, _ = librosa.load(file, sr=16000)
-            audio = librosa.util.normalize(audio)
-            if len(audio) < self.max_length:
-                audio = np.pad(audio, (0, self.max_length - len(audio)))
-            else:
-                audio = audio[:self.max_length]
-            return audio, os.path.basename(file)
-        except Exception as e:
-            logging.error(f"Error loading {file}: {str(e)}")
-            return None, None
+ 
+        for f in tqdm(all_files, desc="Validating audio files"):
+            try:
+                librosa.load(f, sr=16_000, duration=0.1) 
+                self.files.append(f)
+            except Exception as e:
+                logging.warning(f"Skipping {f}: {e}")
 
     def __len__(self):
-        return len(self.audio_files)
+        return len(self.files)
 
-# ------------------- Feature Extraction -------------------
-def extract_whisper_features(model, audio, processor, layer=-1, max_length=1500):
-    try:
-        inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
-        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
-        with torch.no_grad():
-            encoder_outputs = model.get_encoder()(inputs["input_features"])
-            features = encoder_outputs.last_hidden_state if layer == -1 else encoder_outputs.hidden_states[layer]
+    def __getitem__(self, idx):
+        path = self.files[idx]
+        audio, _ = librosa.load(path, sr=16_000)
+        audio = librosa.util.normalize(audio)
 
-        # features shape: (1, sequence_length, 512)
-        sequence_length = features.shape[1]
-        if sequence_length > max_length:
-            features = features[:, :max_length, :]
-        elif sequence_length < max_length:
-            pad_len = max_length - sequence_length
-            features = F.pad(features, (0, 0, 0, pad_len))  # Pad sequence_length dimension
+        if len(audio) < self.maxlen:
+            audio = np.pad(audio, (0, self.maxlen - len(audio)))
+        else:
+            audio = audio[: self.maxlen]
 
-        return features.cpu()
-    except Exception as e:
-        logging.error(f"Error processing audio: {str(e)}")
-        return None
+        return torch.tensor(audio, dtype=torch.float32), os.path.basename(path)
 
-# ------------------- Main Script -------------------
-def extract_features():
-    print("Loading dataset...")
-    dataset = ArabicProcessedAudios(AUDIO_DIR, max_length=MAX_LENGTH_AUDIO)
-    print(f"Number of audio files: {len(dataset)}")
+def collate_fn(batch):
+    audios, names = zip(*batch)
+    return torch.stack(audios), names 
 
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    print("Loading Whisper model and processor...")
-    processor = WhisperProcessor.from_pretrained(MODEL_NAME, cache_dir=os.path.join(CACHE_DIR, "processor"))
-    model = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME, cache_dir=os.path.join(CACHE_DIR, "model"))
-    model.to(DEVICE)
+def whisper_features(model, processor, wav_batch: torch.Tensor,
+                     out_len: int = FEATURE_SEQ_LEN, layer: int = -1) -> torch.Tensor:
+    """
+    wav_batch: (B, MAX_WAV_LEN) on CPU/MPS/GPU
+    returns:   (B, out_len, 512) on CPU
+    """
+    wav_list = [wav.cpu().numpy() for wav in wav_batch]
+    
+    input_features_list = []
+    for wav_array in wav_list:
+        features = processor.feature_extractor(
+            wav_array,
+            sampling_rate=16_000,
+            return_tensors="pt"
+        )
+        input_features_list.append(features["input_features"])
+    
+    input_features = torch.cat(input_features_list, dim=0)  
+    
+    input_features = input_features.to(DEVICE)
 
-    print("Extracting audio features...")
-    all_features = []
-    for batch in tqdm(dataloader, desc="Processing Audio Files"):
-        audios, filenames = batch
-        for audio, filename in zip(audios, filenames):
-            if audio is None:
-                continue
-            features = extract_whisper_features(model, audio.numpy(), processor, layer=-1, max_length=MAX_LENGTH_FEATURES)
-            if features is not None and features.shape == (1, MAX_LENGTH_FEATURES, 512):
-                all_features.append((filename, features))
-            else:
-                logging.warning(f"Feature shape mismatch or None for file: {filename}")
-            del features, audio
-            gc.collect()
-            torch.mps.empty_cache() if torch.mps.is_available() else None
+    with torch.no_grad():
+        enc_out = model.get_encoder()(input_features)
+        feats   = enc_out.last_hidden_state if layer == -1 else enc_out.hidden_states[layer]  
 
-    print(f"Extraction complete. Total feature sets: {len(all_features)}")
-    return all_features
+    if feats.shape[1] > out_len:
+        feats = feats[:, :out_len, :]
+    elif feats.shape[1] < out_len:
+        pad = out_len - feats.shape[1]
+        feats = F.pad(feats, (0, 0, 0, pad))
 
+    return feats.cpu()   
+
+
+def get_all_features() :
+    ds = ArabicProcessedAudios(AUDIO_DIR) 
+    print(f"✓ valid audio files found: {len(ds)}")
+    dl = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False,
+                   num_workers=0, collate_fn=collate_fn)
+
+    processor = WhisperProcessor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+    model     = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR).to(DEVICE).eval()
+
+    out = [] 
+
+    for wavs, names in tqdm(dl, desc="Extracting Whisper features"):
+        feats = whisper_features(model, processor, wavs)  
+        for i, n in enumerate(names):
+            out.append((n, feats[i]))  
+        # memory housekeeping
+        del feats, wavs
+        gc.collect()
+        if DEVICE.type == "cuda":
+            torch.cuda.empty_cache()
+        elif DEVICE.type == "mps":
+            torch.mps.empty_cache()
+
+    return out
