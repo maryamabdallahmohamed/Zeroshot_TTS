@@ -17,3 +17,13 @@ processor_cache
 features_output
 *log
 .DS_Store
+processed_audio.zip
+Audio_Preprocessing.ipynb
+archive (1).zip
+Dataset.zip
+phase2_data.zip
+processed_with_embeddings.csv.zip
+phase2_data
+scripts
+.DS_Store
+
