@@ -7,6 +7,16 @@ processed_audio
 Problem Definition & Data Preprocessing.docx
 .augmentignore 
 .venv
+*.pth
+*.zip
+scripts
+phase2_data
+model_cache
+processor_cache
+*.md
+features_output
+*log
+.DS_Store
 processed_audio.zip
 Audio_Preprocessing.ipynb
 archive (1).zip
@@ -16,3 +26,4 @@ processed_with_embeddings.csv.zip
 phase2_data
 scripts
 .DS_Store
+
